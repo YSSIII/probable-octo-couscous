@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>曙云电竞积分系统</title>
+    <!-- PWA配置 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="曙云积分">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+    <style>
+        :root {
+            --primary-color: #1890ff;
+            --success-color: #52c41a;
+            --error-color: #ff4d4f;
+        }
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 15px;
+            background: #f0f2f5;
+            -webkit-text-size-adjust: 100%;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .month-selector {
+            margin: 15px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #monthPicker {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #d9d9d9;
+            font-size: 14px;
+        }
+        .total-points {
+            color: var(--primary-color);
+            font-weight: bold;
+            margin-left: auto;
+        }
+        .operation-box {
+            background: #fafafa;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+        }
+        .input-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .datalist-container {
+            position: relative;
+            display: inline-block;
+            flex-grow: 1;
+        }
+        datalist {
+            position: absolute;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+        }
+        input, select, button, textarea {
+            padding: 8px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 16px;
+            touch-action: manipulation;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.3s;
+            flex: 1;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #e8e8e8;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #fafafa;
+        }
+        .history-panel {
+            background: #fafafa;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 4px;
+        }
+        .history-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .positive {
+            color: var(--success-color);
+        }
+        .negative {
+            color: var(--error-color);
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .container {
+                padding: 10px;
+            }
+            .input-group {
+                flex-direction: column;
+            }
+            .datalist-container, 
+            input, 
+            textarea, 
+            button {
+                width: 100% !important;
+            }
+            tr {
+                display: block;
+                margin-bottom: 15px;
+                border: 1px solid #e8e8e8;
+                border-radius: 4px;
+            }
+            td {
+                display: block;
+                width: 100%;
+                border: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>曙云电竞积分管理系统</h2>
+        
+        <div class="month-selector">
+            <label>选择月份：</label>
+            <input type="month" id="monthPicker">
+            <span class="total-points" id="monthTotal"></span>
+        </div>
+
+        <div class="operation-box">
+            <h3>操作面板</h3>
+            <div class="input-group">
+                <div class="datalist-container">
+                    <input list="employeeList" id="name" placeholder="选择或输入姓名" autocomplete="off">
+                    <datalist id="employeeList"></datalist>
+                </div>
+                <input type="number" id="points" placeholder="分数" step="1">
+                <textarea id="reason" placeholder="操作备注" rows="2"></textarea>
+            </div>
+            <div class="input-group">
+                <button onclick="addPoints()">加分</button>
+                <button onclick="subtractPoints()" style="background-color: var(--error-color)">减分</button>
+                <button onclick="addNewEmployee()" style="background-color: var(--success-color)">添加员工</button>
+            </div>
+        </div>
+
+        <h3>积分总榜</h3>
+        <table id="scoreTable">
+            <thead>
+                <tr>
+                    <th>姓名</th>
+                    <th>当月积分</th>
+                    <th>总积分</th>
+                    <th>最后操作时间</th>
+                </tr>
+            </thead>
+            <tbody id="scoreBody">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const CACHE_VERSION = 1.2;
+        let employees = JSON.parse(localStorage.getItem('employees')) || [];
+        let currentMonth = '';
+
+        // 初始化
+        function init() {
+            // 数据迁移
+            employees.forEach(emp => {
+                if (!emp.months) {
+                    emp.months = [{
+                        month: currentMonth,
+                        points: emp.points || 0,
+                        history: emp.history || []
+                    }];
+                    emp.totalPoints = emp.points || 0;
+                    delete emp.points;
+                    delete emp.history;
+                }
+            });
+            
+            initMonthPicker();
+            updateEmployeeList();
+            renderTable();
+            checkData();
+        }
+
+        function initMonthPicker() {
+            const picker = document.getElementById('monthPicker');
+            const now = new Date();
+            currentMonth = now.toISOString().slice(0, 7);
+            picker.value = currentMonth;
+            
+            picker.setAttribute('min', new Date(now.setMonth(now.getMonth() - 11)).toISOString().slice(0, 7));
+            picker.setAttribute('max', currentMonth);
+            
+            picker.addEventListener('change', () => {
+                currentMonth = picker.value;
+                updateMonthTotal();
+                renderTable();
+            });
+            
+            updateMonthTotal();
+        }
+
+        function updateMonthTotal() {
+            let total = employees.reduce((sum, emp) => sum + (getCurrentMonthData(emp).points || 0), 0);
+            document.getElementById('monthTotal').textContent = `本月总积分：${total}`;
+        }
+
+        function getCurrentMonthData(emp) {
+            if (!emp.months) emp.months = [];
+            let data = emp.months.find(m => m.month === currentMonth);
+            if (!data) {
+                data = { month: currentMonth, points: 0, history: [] };
+                emp.months.push(data);
+            }
+            return data;
+        }
+
+        function updateEmployeeList() {
+            const datalist = document.getElementById('employeeList');
+            datalist.innerHTML = employees.map(emp => 
+                `<option value="${emp.name}">${emp.name}</option>`
+            ).join('');
+        }
+
+        function validateInput() {
+            const name = document.getElementById('name').value.trim();
+            const points = parseInt(document.getElementById('points').value);
+            const reason = document.getElementById('reason').value.trim();
+            
+            if (!name) {
+                alert('请输入员工姓名');
+                return false;
+            }
+            if (isNaN(points) || points <= 0) {
+                alert('请输入有效的正数分数');
+                return false;
+            }
+            return true;
+        }
+
+        function createHistory(type, points, reason) {
+            return {
+                type,
+                points,
+                reason,
+                timestamp: Date.now()
+            };
+        }
+
+        function addPoints() {
+            if (!validateInput()) return;
+            
+            const name = document.getElementById('name').value.trim();
+            const points = parseInt(document.getElementById('points').value);
+            const reason = document.getElementById('reason').value.trim();
+            
+            let employee = employees.find(emp => emp.name === name);
+            if (!employee) {
+                if (confirm('员工不存在，是否创建新员工？')) {
+                    employee = {
+                        name,
+                        totalPoints: 0,
+                        months: [],
+                        timestamp: Date.now()
+                    };
+                    employees.push(employee);
+                } else return;
+            }
+            
+            const monthData = getCurrentMonthData(employee);
+            monthData.points += points;
+            monthData.history.push(createHistory('add', points, reason));
+            employee.totalPoints += points;
+            employee.timestamp = Date.now();
+            
+            saveData();
+            updateMonthTotal();
+            renderTable();
+            clearInputs();
+        }
+
+        function subtractPoints() {
+            if (!validateInput()) return;
+            
+            const name = document.getElementById('name').value.trim();
+            const points = parseInt(document.getElementById('points').value);
+            const reason = document.getElementById('reason').value.trim();
+            
+            const employee = employees.find(emp => emp.name === name);
+            if (!employee) {
+                alert('员工不存在');
+                return;
+            }
+            
+            const monthData = getCurrentMonthData(employee);
+            monthData.points -= points;
+            monthData.history.push(createHistory('subtract', points, reason));
+            employee.totalPoints -= points;
+            employee.timestamp = Date.now();
+            
+            saveData();
+            updateMonthTotal();
+            renderTable();
+            clearInputs();
+        }
+
+        function addNewEmployee() {
+            const name = document.getElementById('name').value.trim();
+            if (!name) {
+                alert('请输入员工姓名');
+                return;
+            }
+            
+            if (!employees.some(emp => emp.name === name)) {
+                employees.push({
+                    name,
+                    totalPoints: 0,
+                    months: [],
+                    timestamp: Date.now()
+                });
+                saveData();
+                updateEmployeeList();
+                renderTable();
+                clearInputs();
+            } else {
+                alert('该员工已存在');
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('scoreBody');
+            tbody.innerHTML = '';
+            
+            employees.sort((a, b) => {
+                const aPoints = getCurrentMonthData(a).points;
+                const bPoints = getCurrentMonthData(b).points;
+                return bPoints - aPoints;
+            });
+            
+            employees.forEach(emp => {
+                const monthData = getCurrentMonthData(emp);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${emp.name}</td>
+                    <td class="${monthData.points < 0 ? 'negative' : 'positive'}">${monthData.points}</td>
+                    <td>${emp.totalPoints}</td>
+                    <td>${new Date(emp.timestamp).toLocaleString()}</td>
+                `;
+                
+                const historyPanel = createHistoryPanel(emp);
+                row.addEventListener('click', () => toggleHistory(historyPanel));
+                
+                const hiddenRow = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 4;
+                td.appendChild(historyPanel);
+                hiddenRow.appendChild(td);
+                
+                tbody.appendChild(row);
+                tbody.appendChild(hiddenRow);
+            });
+        }
+
+        function createHistoryPanel(emp) {
+            const panel = document.createElement('div');
+            panel.className = 'history-panel';
+            panel.style.display = 'none';
+            panel.innerHTML = `
+                <h4>${currentMonth}月记录：</h4>
+                ${getCurrentMonthData(emp).history.map(item => `
+                    <div class="history-item">
+                        [${new Date(item.timestamp).toLocaleString()}] 
+                        <span class="${item.type === 'add' ? 'positive' : 'negative'}">${item.type === 'add' ? '+' : '-'}${item.points}分</span>
+                        <br>原因：${item.reason || '无备注'}
+                    </div>
+                `).join('')}
+            `;
+            return panel;
+        }
+
+        function toggleHistory(panel) {
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function clearInputs() {
+            document.getElementById('points').value = '';
+            document.getElementById('reason').value = '';
+        }
+
+        function saveData() {
+            localStorage.setItem('employees', JSON.stringify(employees));
+            localStorage.setItem('cache_version', CACHE_VERSION);
+        }
+
+        function checkData() {
+            if (!localStorage.getItem('employees')) {
+                alert('首次使用提示：数据将保存在本设备浏览器中，请定期备份！');
+            }
+        }
+
+        // 启动系统
+        init();
+    </script>
+</body>
+</html>
